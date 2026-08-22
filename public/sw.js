@@ -22,6 +22,12 @@ self.addEventListener('activate', (event) => {
 
 // Network-first strategy: try network, fall back to cache
 self.addEventListener('fetch', (event) => {
+  // Bypass caching entirely for API calls — always hit the network
+  if (event.request.url.includes('/api/')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
