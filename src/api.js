@@ -1,8 +1,4 @@
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL
-
-if (!configuredBaseUrl) {
-  throw new Error('VITE_API_BASE_URL is required to make backend requests.')
-}
+const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://guradian.vercel.app/'
 
 export const API_BASE_URL = configuredBaseUrl.replace(/\/+$/, '')
 
