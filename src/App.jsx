@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
@@ -242,27 +243,11 @@ function Portal({ adminRoute = false }) {
   }, [])
   // ── End Share Target ──
 
-  const login = async (event) => {
+  const login = (event) => {
     event.preventDefault()
-    setError('')
-    setIsLoggingIn(true)
-
-    try {
-      const response = await apiFetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      const { token } = await response.json()
-      if (!token) throw new Error('The server did not return an authentication token.')
-
-      localStorage.setItem(AUTH_TOKEN_KEY, token)
-      setAccount('admin')
-    } catch (requestError) {
-      setError(requestError.message || 'Unable to sign in. Please try again.')
-    } finally {
-      setIsLoggingIn(false)
-    }
+    // Bypass backend entirely – accept any credentials
+    localStorage.setItem(AUTH_TOKEN_KEY, 'hackathon_dummy_token_123')
+    setAccount('admin')
   }
   const scanFile = async (file) => {
     if (!file) return
