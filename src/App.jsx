@@ -171,7 +171,7 @@ function InstallModal({ open, onClose }) {
     setMessage('Extension ready to install|Your Guardian extension package is ready. Extract the ZIP and load it through Chrome Developer Mode.')
   }
   const [messageTitle, messageBody] = message.split('|')
-  return <div className="install-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}><motion.div className="install-modal" role="dialog" aria-modal="true" aria-labelledby="install-title" initial={{ opacity: 0, y: 18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }}><button className="modal-close" onClick={onClose} aria-label="Close installation options"><X size={18} /></button><GuardianMark size={32} /><span className="section-kicker"><i /> Secure installation</span><h2 id="install-title">Add Gradient to Chrome</h2><p className="modal-note">Choose the installation method that works best for your browser.</p><div className="install-options"><InstallOption icon={<Download size={20} />} title="Download ZIP" text="Download the complete Gradient extension package for manual installation." action="Download ZIP" onClick={downloadZip} /><InstallOption icon={<Globe2 size={20} />} title="Chrome Web Store" text="Install Gradient directly from the official Chrome Web Store." action="Install from Chrome Web Store" onClick={() => window.open('https://chromewebstore.google.com/', '_blank', 'noopener,noreferrer')} /><InstallOption icon={<ShieldCheck size={20} />} title="Install Extension" text="Follow the installation flow for users who already have the extension package." action="Install Gradient" onClick={() => setMessage('Installation guidance|Chrome does not allow websites to install extensions silently. Use Chrome Web Store or Developer Mode -> Load unpacked.')}/></div>{message && <motion.div className="install-message" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}><Check size={15} /><div><strong>✓ {messageTitle}</strong><br />{messageBody}<br /><button className="guide-button" onClick={() => setGuideOpen(!guideOpen)}>View Installation Guide</button>{guideOpen && <ol><li>Extract the ZIP file.</li><li>Open <code>chrome://extensions</code>.</li><li>Enable Developer mode.</li><li>Select Load unpacked.</li></ol>}</div></motion.div>}</motion.div></div>
+  return <div className="install-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}><motion.div className="install-modal" role="dialog" aria-modal="true" aria-labelledby="install-title" initial={{ opacity: 0, y: 18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }}><button className="modal-close" onClick={onClose} aria-label="Close installation options"><X size={18} /></button><GuardianMark size={32} /><span className="section-kicker"><i /> Secure installation</span><h2 id="install-title">Add Gradient to Chrome</h2><p className="modal-note">Choose the installation method that works best for your browser.</p><div className="install-options"><InstallOption icon={<Download size={20} />} title="Download ZIP" text="Download the complete Gradient extension package for manual installation." action="Download ZIP" onClick={downloadZip} /><InstallOption icon={<Globe2 size={20} />} title="Chrome Web Store" text="Install Gradient directly from the official Chrome Web Store." action="Install from Chrome Web Store" onClick={() => window.open('https://chromewebstore.google.com/', '_blank', 'noopener,noreferrer')} /><InstallOption icon={<ShieldCheck size={20} />} title="Install Extension" text="Follow the installation flow for users who already have the extension package." action="Install Gradient" onClick={() => setMessage('Installation guidance|Chrome does not allow websites to install extensions silently. Use Chrome Web Store or Developer Mode -> Load unpacked.')} /></div>{message && <motion.div className="install-message" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}><Check size={15} /><div><strong>✓ {messageTitle}</strong><br />{messageBody}<br /><button className="guide-button" onClick={() => setGuideOpen(!guideOpen)}>View Installation Guide</button>{guideOpen && <ol><li>Extract the ZIP file.</li><li>Open <code>chrome://extensions</code>.</li><li>Enable Developer mode.</li><li>Select Load unpacked.</li></ol>}</div></motion.div>}</motion.div></div>
 }
 function InstallOption({ icon, title, text, action, onClick }) { return <article className="install-option"><span className="install-icon">{icon}</span><div><h3>{title}</h3><p>{text}</p><button onClick={onClick}>{action}<ArrowRight size={13} /></button></div></article> }
 
@@ -188,6 +188,47 @@ function Portal({ adminRoute = false }) {
   const [urlResult, setUrlResult] = useState(null)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState('Ready to scan')
+
+  // ── Share Target: auto-scan URLs received from Android "Share" menu ──
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const sharedUrl = params.get('url') || params.get('text') || params.get('title') || ''
+
+    // Extract a URL from the shared content (it may contain surrounding text)
+    const urlMatch = sharedUrl.match(/https?:\/\/[^\s]+/)
+    const incoming = urlMatch ? urlMatch[0] : sharedUrl.trim()
+
+    if (incoming) {
+      setUrl(incoming)
+
+      // Clean the query string so a page refresh won't re-trigger the scan
+      window.history.replaceState({}, '', window.location.pathname)
+
+      // Auto-trigger the URL scan after a short delay so state is settled
+      setTimeout(() => {
+        setUrlScanning(true)
+        setUrlResult(null)
+        apiFetch('/api/check-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: incoming }),
+        })
+          .then((response) => response.json())
+          .then((result) => {
+            setUrlResult({
+              safe: result.safe === true,
+              riskScore: result.riskScore,
+              reason: result.reason || (result.safe ? 'No threats detected.' : 'Potential threat detected.'),
+            })
+          })
+          .catch((err) => {
+            setUrlResult({ safe: false, error: true, reason: err.message || 'The URL could not be scanned.' })
+          })
+          .finally(() => setUrlScanning(false))
+      }, 100)
+    }
+  }, [])
+  // ── End Share Target ──
 
   const login = async (event) => {
     event.preventDefault()
