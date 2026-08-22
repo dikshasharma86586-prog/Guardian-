@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="en">
   <head>
@@ -16,13 +15,24 @@
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
     <script>
+      // EMERGENCY FIX: Unregister all active Service Workers causing fetch failures on mobile
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('[Guardian] SW registered:', reg.scope))
-            .catch(err => console.error('[Guardian] SW registration failed:', err));
-        });
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (let registration of registrations) {
+            registration.unregister();
+            console.log("Service Worker forcefully unregistered for hackathon demo.");
+          }
+        }).catch((err) => console.error("SW unregistration failed: ", err));
       }
+
+      // COMMENTED OUT — was causing aggressive caching on Android
+      // if ('serviceWorker' in navigator) {
+      //   window.addEventListener('load', () => {
+      //     navigator.serviceWorker.register('/sw.js')
+      //       .then(reg => console.log('[Guardian] SW registered:', reg.scope))
+      //       .catch(err => console.error('[Guardian] SW registration failed:', err));
+      //   });
+      // }
     </script>
   </body>
 </html>
