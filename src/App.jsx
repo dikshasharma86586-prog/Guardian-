@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch } from './api'
 import {
   ArrowRight, Check, ChevronRight, CircleAlert, Clock3, Download, FileWarning, Globe2,
@@ -44,10 +44,22 @@ function GuardianMark({ size = 22 }) {
 
 function App() {
   const location = useLocation()
+  const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [installOpen, setInstallOpen] = useState(false)
   const mode = useSecurityCycle()
+
+  // ── Share Target bridge: forward shared params from "/" to "/portal" ──
+  useEffect(() => {
+    if (location.pathname !== '/') return
+    const params = new URLSearchParams(window.location.search)
+    const shared = params.get('url') || params.get('text') || params.get('title') || ''
+    if (shared) {
+      // Forward the original query string so the Portal useEffect picks it up
+      navigate(`/portal${window.location.search}`, { replace: true })
+    }
+  }, [location.pathname, navigate])
 
   useEffect(() => {
     const update = () => setScrolled(window.scrollY > 16)
