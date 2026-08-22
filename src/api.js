@@ -10,7 +10,16 @@ export async function apiFetch(path, options) {
   const response = await fetch(apiUrl(path), options)
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}.`)
+    let message
+
+    try {
+      const body = await response.clone().json()
+      message = body.message || body.reason || body.error
+    } catch {
+      // Some API errors have an empty or non-JSON body.
+    }
+
+    throw new Error(message || `Request failed with status ${response.status}.`)
   }
 
   return response
