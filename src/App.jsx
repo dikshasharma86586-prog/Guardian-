@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link, useLocation } from 'react-router-dom'
+import { apiFetch } from './api'
 import {
   ArrowRight, Check, ChevronRight, CircleAlert, Clock3, Download, FileWarning, Globe2,
   Link2, LockKeyhole, Menu, MousePointer2, Radar, ScanSearch, Shield,
@@ -159,11 +160,11 @@ function InstallModal({ open, onClose }) {
   useEffect(() => { if (!open) setMessage('') }, [open])
   if (!open) return null
   const downloadZip = () => {
-    fetch('/guardian.zip').then(response => response.blob()).then(blob => {
+    apiFetch('/guardian.zip').then(response => response.blob()).then(blob => {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a'); link.href = url; link.download = 'Gradient-Cybersecurity-Extension.zip'; link.click(); URL.revokeObjectURL(url)
       setMessage('Extension ready to install|Your Guardian extension package is ready. Extract the ZIP and load it through Chrome Developer Mode.')
-    })
+    }).catch(() => setMessage('Download failed|The extension package could not be downloaded. Please try again later.'))
   }
   const [messageTitle, messageBody] = message.split('|')
   return <div className="install-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}><motion.div className="install-modal" role="dialog" aria-modal="true" aria-labelledby="install-title" initial={{ opacity: 0, y: 18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }}><button className="modal-close" onClick={onClose} aria-label="Close installation options"><X size={18} /></button><GuardianMark size={32} /><span className="section-kicker"><i /> Secure installation</span><h2 id="install-title">Add Gradient to Chrome</h2><p className="modal-note">Choose the installation method that works best for your browser.</p><div className="install-options"><InstallOption icon={<Download size={20} />} title="Download ZIP" text="Download the complete Gradient extension package for manual installation." action="Download ZIP" onClick={downloadZip} /><InstallOption icon={<Globe2 size={20} />} title="Chrome Web Store" text="Install Gradient directly from the official Chrome Web Store." action="Install from Chrome Web Store" onClick={() => window.open('https://chromewebstore.google.com/', '_blank', 'noopener,noreferrer')} /><InstallOption icon={<ShieldCheck size={20} />} title="Install Extension" text="Follow the installation flow for users who already have the extension package." action="Install Gradient" onClick={() => setMessage('Installation guidance|Chrome does not allow websites to install extensions silently. Use Chrome Web Store or Developer Mode -> Load unpacked.')}/></div>{message && <motion.div className="install-message" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}><Check size={15} /><div><strong>✓ {messageTitle}</strong><br />{messageBody}<br /><button className="guide-button" onClick={() => setGuideOpen(!guideOpen)}>View Installation Guide</button>{guideOpen && <ol><li>Extract the ZIP file.</li><li>Open <code>chrome://extensions</code>.</li><li>Enable Developer mode.</li><li>Select Load unpacked.</li></ol>}</div></motion.div>}</motion.div></div>
