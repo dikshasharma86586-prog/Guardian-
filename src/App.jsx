@@ -22,6 +22,8 @@ const securityStates = {
   danger: { score: 28, label: 'Danger detected', host: 'paypa1-account.com', note: '3 threats need your attention' },
 }
 
+const AUTH_TOKEN_KEY = 'guardian.authToken'
+
 function useSecurityCycle() {
   const [state, setState] = useState('safe')
   useEffect(() => {
@@ -160,11 +162,13 @@ function InstallModal({ open, onClose }) {
   useEffect(() => { if (!open) setMessage('') }, [open])
   if (!open) return null
   const downloadZip = () => {
-    apiFetch('/guardian.zip').then(response => response.blob()).then(blob => {
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a'); link.href = url; link.download = 'Gradient-Cybersecurity-Extension.zip'; link.click(); URL.revokeObjectURL(url)
-      setMessage('Extension ready to install|Your Guardian extension package is ready. Extract the ZIP and load it through Chrome Developer Mode.')
-    }).catch(() => setMessage('Download failed|The extension package could not be downloaded. Please try again later.'))
+    const link = document.createElement('a')
+    link.href = '/guardian.zip'
+    link.download = 'Gradient-Cybersecurity-Extension.zip'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setMessage('Extension ready to install|Your Guardian extension package is ready. Extract the ZIP and load it through Chrome Developer Mode.')
   }
   const [messageTitle, messageBody] = message.split('|')
   return <div className="install-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}><motion.div className="install-modal" role="dialog" aria-modal="true" aria-labelledby="install-title" initial={{ opacity: 0, y: 18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }}><button className="modal-close" onClick={onClose} aria-label="Close installation options"><X size={18} /></button><GuardianMark size={32} /><span className="section-kicker"><i /> Secure installation</span><h2 id="install-title">Add Gradient to Chrome</h2><p className="modal-note">Choose the installation method that works best for your browser.</p><div className="install-options"><InstallOption icon={<Download size={20} />} title="Download ZIP" text="Download the complete Gradient extension package for manual installation." action="Download ZIP" onClick={downloadZip} /><InstallOption icon={<Globe2 size={20} />} title="Chrome Web Store" text="Install Gradient directly from the official Chrome Web Store." action="Install from Chrome Web Store" onClick={() => window.open('https://chromewebstore.google.com/', '_blank', 'noopener,noreferrer')} /><InstallOption icon={<ShieldCheck size={20} />} title="Install Extension" text="Follow the installation flow for users who already have the extension package." action="Install Gradient" onClick={() => setMessage('Installation guidance|Chrome does not allow websites to install extensions silently. Use Chrome Web Store or Developer Mode -> Load unpacked.')}/></div>{message && <motion.div className="install-message" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}><Check size={15} /><div><strong>✓ {messageTitle}</strong><br />{messageBody}<br /><button className="guide-button" onClick={() => setGuideOpen(!guideOpen)}>View Installation Guide</button>{guideOpen && <ol><li>Extract the ZIP file.</li><li>Open <code>chrome://extensions</code>.</li><li>Enable Developer mode.</li><li>Select Load unpacked.</li></ol>}</div></motion.div>}</motion.div></div>
@@ -172,20 +176,105 @@ function InstallModal({ open, onClose }) {
 function InstallOption({ icon, title, text, action, onClick }) { return <article className="install-option"><span className="install-icon">{icon}</span><div><h3>{title}</h3><p>{text}</p><button onClick={onClick}>{action}<ArrowRight size={13} /></button></div></article> }
 
 function Portal({ adminRoute = false }) {
-  const [account, setAccount] = useState(null)
+  const [account, setAccount] = useState(() => localStorage.getItem(AUTH_TOKEN_KEY) ? 'admin' : null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [fileScanning, setFileScanning] = useState(false)
+  const [fileResult, setFileResult] = useState(null)
+  const [url, setUrl] = useState('')
+  const [urlScanning, setUrlScanning] = useState(false)
+  const [urlResult, setUrlResult] = useState(null)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState('Ready to scan')
 
-  const login = (event) => {
+  const login = async (event) => {
     event.preventDefault()
-    const credentials = { 'admin@guardian.dev': ['admin123', 'admin'], 'customer@guardian.dev': ['customer123', 'customer'] }
-    const match = credentials[email]
-    if (!match || match[0] !== password) { setError('Invalid demo credentials.'); return }
-    setAccount(match[1]); setError('')
+    setError('')
+    setIsLoggingIn(true)
+
+    try {
+      const response = await apiFetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const { token } = await response.json()
+      if (!token) throw new Error('The server did not return an authentication token.')
+
+      localStorage.setItem(AUTH_TOKEN_KEY, token)
+      setAccount('admin')
+    } catch (requestError) {
+      setError(requestError.message || 'Unable to sign in. Please try again.')
+    } finally {
+      setIsLoggingIn(false)
+    }
   }
+  const scanFile = async (file) => {
+    if (!file) return
+
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      setFileResult({ status: 'error', message: 'Your session has expired. Please sign in again.' })
+      return
+    }
+
+    setFileScanning(true)
+    setFileResult({ status: 'pending', message: `Scanning ${file.name}...` })
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const response = await apiFetch('/api/scan', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
+      const result = await response.json()
+      const message = [result.message, result.reason].filter(Boolean).join(' · ') || 'Scan complete.'
+      const status = result.safe === true || /safe|clean|accepted/i.test(result.message || '') ? 'safe' : 'danger'
+      setFileResult({ status, message })
+    } catch (requestError) {
+      setFileResult({ status: 'error', message: requestError.message || 'The file could not be scanned.' })
+    } finally {
+      setFileScanning(false)
+    }
+  }
+
+  const scanUrl = async (event) => {
+    event.preventDefault()
+    const targetUrl = url.trim()
+    if (!targetUrl) return
+
+    setUrlScanning(true)
+    setUrlResult(null)
+
+    try {
+      const response = await apiFetch('/api/check-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: targetUrl }),
+      })
+      const result = await response.json()
+      setUrlResult({
+        safe: result.safe === true,
+        riskScore: result.riskScore,
+        reason: result.reason || (result.safe ? 'No threats detected.' : 'Potential threat detected.'),
+      })
+    } catch (requestError) {
+      setUrlResult({ safe: false, error: true, reason: requestError.message || 'The URL could not be scanned.' })
+    } finally {
+      setUrlScanning(false)
+    }
+  }
+
+  const logout = () => {
+    localStorage.removeItem(AUTH_TOKEN_KEY)
+    setAccount(null)
+    setFileResult(null)
+  }
+
   const scan = () => {
     setScanning(true); setScanResult('Analyzing file signature...')
     window.setTimeout(() => { setScanning(false); setScanResult('SAFE · invoice.pdf'); }, 1100)
@@ -195,9 +284,39 @@ function Portal({ adminRoute = false }) {
 
   if (adminRoute && account !== 'admin') return <section className="portal-auth shell"><div className="auth-panel denied-panel"><span className="denied-code">403</span><span className="section-kicker"><i /> Access control</span><h1>Access<br /><span>denied.</span></h1><p>Your account does not have permission to view this page.</p><Link className="button secondary" to="/portal">Return to portal <ArrowRight size={16} /></Link></div></section>
 
+  return <PortalDashboard account={account} onLogout={logout} fileScanning={fileScanning} fileResult={fileResult} onFileSelect={scanFile} url={url} onUrlChange={setUrl} urlScanning={urlScanning} urlResult={urlResult} onUrlScan={scanUrl} />
+
   if (account === 'admin') return <section className="dashboard shell"><DashboardHeader account={account} onLogout={() => setAccount(null)} /><div className="dashboard-title"><span className="section-kicker"><i /> Admin overview</span><h1>Security activity, <span>at a glance.</span></h1></div><div className="metric-grid"><Metric label="Total scans" value="1,284" /><Metric label="Critical threats" value="12" alert /><Metric label="Exposed secrets" value="27" alert /><Metric label="Vulnerable dependencies" value="46" alert /><Metric label="Protected platforms" value="8" /><Metric label="AI analyses" value="603" /></div><div className="dashboard-panel"><div className="panel-heading"><div><span className="section-kicker"><i /> Recent security activity</span><h2>All scans</h2></div><span className="live-pill"><i /> Live</span></div><div className="scan-table"><div className="table-row table-head"><span>Repository / file</span><span>Account</span><span>Status</span><span>Time</span></div>{[['guardian-api', 'customer@guardian.dev', 'SAFE', '2 min ago'], ['auth-handler.js', 'admin@guardian.dev', 'REJECTED', '18 min ago'], ['package.json', 'customer@guardian.dev', 'REVIEW', '42 min ago']].map(row => <div className="table-row" key={row[0]}><span>{row[0]}</span><span>{row[1]}</span><b className={row[2] === 'SAFE' ? 'safe-text' : 'danger-text'}>{row[2]}</b><span>{row[3]}</span></div>)}</div></div></section>
 
   return <section className="dashboard shell"><DashboardHeader account={account} onLogout={() => setAccount(null)} /><div className="dashboard-title"><span className="section-kicker"><i /> Customer overview</span><h1>Welcome back, <span>Guardian.</span></h1><p>Your code security layer is active across supported coding platforms.</p></div><div className="customer-grid"><div className="dashboard-panel scan-panel"><div className="panel-heading"><div><span className="section-kicker"><i /> File and code scanner</span><h2>Check before you ship.</h2></div><FileWarning size={20} /></div><button className={`drop-zone ${scanning ? 'is-scanning' : ''}`} onClick={scan}><ScanSearch size={25} /><strong>{scanning ? 'Analyzing code...' : 'Drag & drop file to scan'}</strong><small>JS, TS, PY, JSON up to 25 MB</small></button><div className={`scan-result ${scanResult.startsWith('SAFE') ? 'result-safe' : ''}`}><span><ShieldCheck size={16} /></span>{scanResult}</div></div><div className="dashboard-panel overview-panel"><span className="section-kicker"><i /> Overall security score</span><div className="overview-score"><b>92</b><span>/100</span></div><strong>Protection active</strong><p>8 platforms monitored today</p><div className="signal-line"><span /><span /><span /><span /><span /></div></div></div><div className="dashboard-panel history-panel"><div className="panel-heading"><div><span className="section-kicker"><i /> Scan history</span><h2>Recent security reports</h2></div><span className="muted">View all</span></div>{[['auth-handler.js', 'SAFE', 'Today, 10:42'], ['package-lock.json', 'REJECTED', 'Yesterday, 16:08'], ['config.env', 'REVIEW', 'Yesterday, 12:31']].map(row => <div className="history-row" key={row[0]}><FileWarning size={17} /><span><b>{row[0]}</b><small>{row[2]}</small></span><strong className={row[1] === 'SAFE' ? 'safe-text' : 'danger-text'}>{row[1]}</strong></div>)}</div></section>
+}
+
+function PortalDashboard({ account, onLogout, fileScanning, fileResult, onFileSelect, url, onUrlChange, urlScanning, urlResult, onUrlScan }) {
+  const fileStatusClass = fileResult ? `result-${fileResult.status}` : ''
+  const urlStatusClass = urlResult ? (urlResult.safe ? 'result-safe' : 'result-danger') : ''
+
+  return <section className="dashboard shell">
+    <DashboardHeader account={account} onLogout={onLogout} />
+    <div className="dashboard-title"><span className="section-kicker"><i /> Security workspace</span><h1>Check before<br /><span>you ship.</span></h1><p>Run live URL and file checks against Guardian&apos;s security engine.</p></div>
+    <div className="scanner-grid">
+      <div className="dashboard-panel scan-panel">
+        <div className="panel-heading"><div><span className="section-kicker"><i /> Protected file scanner</span><h2>Inspect a file</h2></div><FileWarning size={20} /></div>
+        <input id="file-upload" className="visually-hidden" type="file" onChange={event => { onFileSelect(event.target.files?.[0]); event.target.value = '' }} />
+        <label className={`drop-zone ${fileScanning ? 'is-scanning' : ''}`} htmlFor="file-upload" onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); onFileSelect(event.dataTransfer.files?.[0]) }}>
+          <ScanSearch size={25} /><strong>{fileScanning ? 'Analyzing file...' : 'Choose or drop a file to scan'}</strong><small>Uses byte-signature mismatch detection</small>
+        </label>
+        <div className={`scan-result ${fileStatusClass}`} aria-live="polite"><span>{fileResult?.status === 'safe' ? <ShieldCheck size={16} /> : <FileWarning size={16} />}</span>{fileResult?.message || 'Select a file to start a protected scan.'}</div>
+      </div>
+      <div className="dashboard-panel url-scan-panel">
+        <div className="panel-heading"><div><span className="section-kicker"><i /> Public URL scanner</span><h2>Check a link</h2></div><Globe2 size={20} /></div>
+        <form className="url-scan-form" onSubmit={onUrlScan}>
+          <label htmlFor="url-to-scan">Website URL</label>
+          <div><input id="url-to-scan" value={url} onChange={event => onUrlChange(event.target.value)} type="url" placeholder="https://example.com" required /><button className="button primary" type="submit" disabled={urlScanning}>{urlScanning ? 'Scanning...' : 'Scan URL'}<ArrowRight size={15} /></button></div>
+        </form>
+        <div className={`url-scan-result ${urlStatusClass}`} aria-live="polite">{urlResult ? <><b>{urlResult.error ? 'Scan failed' : urlResult.safe ? 'Safe' : 'Danger'}{typeof urlResult.riskScore === 'number' && ` · Risk score ${urlResult.riskScore}/100`}</b><span>{urlResult.reason}</span></> : <span>Enter a URL to run the live threat check.</span>}</div>
+      </div>
+    </div>
+  </section>
 }
 
 function DashboardHeader({ account, onLogout }) { return <div className="dashboard-header"><Link className="brand" to="/"><GuardianMark size={25} /><span>Guardian</span></Link><span className="account-chip">{account} account</span><button onClick={onLogout}>Log out</button></div> }
